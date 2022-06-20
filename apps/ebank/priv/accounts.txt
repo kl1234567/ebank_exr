@@ -1,0 +1,5 @@
+% account number, balance, pin, name
+{1, 100, "1234", "Henry Nystrom"}.
+{2, 200, "4321", "Martin Gausby"}.
+{3, 1000, "1111", "Gabor Olah"}.
+{4, 5000, "1234", "Henry Nystrom"}.

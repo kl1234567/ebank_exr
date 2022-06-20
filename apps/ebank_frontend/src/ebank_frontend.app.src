@@ -1,0 +1,12 @@
+{application, ebank_frontend,
+ [{description, "Ebank frontend"},
+  {vsn, "1.0.0"},
+  {applications,
+   [kernel,
+    stdlib,
+    inets
+   ]},
+  {env,[]},
+  {modules, [web, webatm]},
+  {links, []}
+ ]}.
