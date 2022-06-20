@@ -146,10 +146,13 @@ handle_call({deposit, AccountNumber, Amount}, _From, State = #backend_state{tabl
 
 handle_call({transfer, FromAccountNumber, ToAccountNumber, Amount, Pin}, _From, State = #backend_state{table = Table}) ->
   Res =
-    case withdraw_action(FromAccountNumber, Pin, Table, Amount) of
-      ok -> backend_db:credit(ToAccountNumber, Amount, Table),
-        ok;
-      OtherRes -> OtherRes
+    case backend_db:lookup(ToAccountNumber, Table) of
+      {error, instance} -> {error, instance};
+      _ -> case withdraw_action(FromAccountNumber, Pin, Table, Amount) of
+             ok ->
+               backend_db:credit(ToAccountNumber, Amount, Table);
+             OtherRes -> OtherRes
+           end
     end,
   {reply, Res, State};
 
