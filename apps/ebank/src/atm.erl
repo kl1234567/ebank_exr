@@ -110,7 +110,8 @@ state_idle(_EventType, _EventContent, State = #atm_state{}) ->
 
 
 state_get_pin(_EventType=timeout, _EventContent, State = #atm_state{name = Name}) ->
-  webatm:show_timeout(Name),
+  io:format("got timeout 1~n", []),
+  ok = webatm:show_timeout(Name),
   NextStateName = ?ST_IDLE,
   {next_state, NextStateName, clear_state(State)};
 
@@ -156,7 +157,8 @@ state_get_pin(_EventType, _EventContent, State = #atm_state{}) ->
 %% and cancel are discarded. If a selection event is received, the appropriate action is
 %% performed. If withdraw is selected, the machine goes to the withdraw state.
 state_selection(_EventType=timeout, _EventContent, State = #atm_state{name = Name}) ->
-  webatm:show_timeout(Name),
+  io:format("got timeout 2~n", []),
+  ok = webatm:show_timeout(Name),
   NextStateName = ?ST_IDLE,
   {next_state, NextStateName, clear_state(State), [?TIMEOUT_VALUE]};
 
@@ -197,7 +199,8 @@ state_selection(_EventType, _EventContent, State = #atm_state{}) ->
 %% reported to the user, the card ejected, and the machine goes to the idle state. A clear
 %% event will clear the digits, so all other events except stop and cancel are discarded.
 state_withdraw(_EventType=timeout, _EventContent, State = #atm_state{name = Name}) ->
-  webatm:show_timeout(Name),
+  io:format("got timeout 3~n", []),
+  ok = webatm:show_timeout(Name),
   NextStateName = ?ST_IDLE,
   {next_state, NextStateName, clear_state(State)};
 
