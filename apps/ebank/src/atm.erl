@@ -97,20 +97,16 @@ state_idle(_EventType, {card_inserted, AccountNumber}, State = #atm_state{}) ->
   {next_state, NextStateName, State#atm_state{entered_pin = "", account_number = AccountNumber}};
 
 state_idle(_EventType, stop, State = #atm_state{name = Name}) ->
-  ok = atm:stop(Name),
-  NextStateName = ?ST_IDLE,
-  {next_state, NextStateName, State};
+  {stop, got_stop_event};
 
 % unrecognized event under state ?ST_IDLE
 state_idle(_EventType, _EventContent, State = #atm_state{}) ->
-  KeepStateName = ?ST_IDLE,
-  {next_state, KeepStateName, State}.
+  {keep_state, State}.
 
 
 state_get_pin(_EventType, {digit, N}, State = #atm_state{entered_pin = CurrPin}) ->
   NewPin = CurrPin ++ integer_to_list(N),
-  NextStateName = ?ST_GET_PIN,
-  {next_state, NextStateName, State#atm_state{entered_pin = NewPin}};
+  {keep_state, State#atm_state{entered_pin = NewPin}};
 
 state_get_pin(_EventType, enter, State = #atm_state{entered_pin = Pin, account_number = AccountNumber}) ->
   case backend:pin_valid(AccountNumber, Pin) of
@@ -125,23 +121,20 @@ state_get_pin(_EventType, enter, State = #atm_state{entered_pin = Pin, account_n
   {next_state, NextStateName, NewState};
 
 state_get_pin(_EventType, clear, State = #atm_state{}) ->
-  NewPin = "",
-  NextStateName = ?ST_GET_PIN,
-  {next_state, NextStateName, State#atm_state{entered_pin = NewPin}};
+  {keep_state, State#atm_state{entered_pin = ""}};
 
 state_get_pin(_EventType, cancel, State = #atm_state{}) ->
   NextStateName = ?ST_IDLE,
   {next_state, NextStateName, clear_state(State)};
 
 state_get_pin(_EventType, stop, State = #atm_state{name = Name}) ->
-  ok = atm:stop(Name),
-  NextStateName = ?ST_GET_PIN,
-  {next_state, NextStateName, clear_state(State)};
+  {stop, got_stop_event};
 
 % unrecognized event under state ?ST_GET_PIN
 state_get_pin(_EventType, _EventContent, State = #atm_state{}) ->
-  NextStateName = ?ST_GET_PIN,
-  {next_state, NextStateName, State}.
+  {keep_state, State}.
+
+
 
 %% @private
 %% @doc If callback_mode is handle_event_function, then whenever a
