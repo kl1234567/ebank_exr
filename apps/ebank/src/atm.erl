@@ -19,7 +19,7 @@
 %%  state_name/3,
 %%  handle_event/4,
   terminate/3, code_change/4, callback_mode/0,
-  state_idle/3, state_get_pin/3]).
+  state_idle/3, state_get_pin/3, state_selection/3, state_withdraw/3]).
 
 -define(SERVER, ?MODULE).
 
@@ -30,7 +30,8 @@
 
 -record(atm_state, {name,
   entered_pin = "",
-  account_number = none}).
+  account_number = none,
+  amount_to_withdraw = ""}).
 
 %%%===================================================================
 %%% API
@@ -96,7 +97,7 @@ state_idle(_EventType, {card_inserted, AccountNumber}, State = #atm_state{}) ->
   NextStateName = ?ST_GET_PIN,
   {next_state, NextStateName, State#atm_state{entered_pin = "", account_number = AccountNumber}};
 
-state_idle(_EventType, stop, State = #atm_state{name = Name}) ->
+state_idle(_EventType, stop, _State = #atm_state{}) ->
   {stop, got_stop_event};
 
 % unrecognized event under state ?ST_IDLE
@@ -127,7 +128,7 @@ state_get_pin(_EventType, cancel, State = #atm_state{}) ->
   NextStateName = ?ST_IDLE,
   {next_state, NextStateName, clear_state(State)};
 
-state_get_pin(_EventType, stop, State = #atm_state{name = Name}) ->
+state_get_pin(_EventType, stop, _State = #atm_state{}) ->
   {stop, got_stop_event};
 
 % unrecognized event under state ?ST_GET_PIN
@@ -135,6 +136,83 @@ state_get_pin(_EventType, _EventContent, State = #atm_state{}) ->
   {keep_state, State}.
 
 
+%% selection is the state where the user can select what to do: withdraw cash, get a
+%% mini-statement or the current balance on the account. All events except selection, stop,
+%% and cancel are discarded. If a selection event is received, the appropriate action is
+%% performed. If withdraw is selected, the machine goes to the withdraw state.
+state_selection(_EventType, {selection, _Action = withdraw}, State = #atm_state{}) ->
+  NextStateName = ?ST_WITHDRAW,
+  {next_state, NextStateName, State};
+
+state_selection(_EventType, {selection, _Action = balance},
+    State = #atm_state{account_number = AccountNumber, entered_pin = Pin}) ->
+  % TODO: where to send the result?
+  _Res = backend:balance(AccountNumber, Pin),
+  {keep_state, State};
+
+state_selection(_EventType, {selection, _Action = statement},
+    State = #atm_state{account_number = AccountNumber, entered_pin = Pin}) ->
+  % TODO: where to send the result?
+  _Res = backend:transactions(AccountNumber, Pin),
+  {keep_state, State};
+
+state_selection(_EventType, cancel, State = #atm_state{}) ->
+  NextStateName = ?ST_IDLE,
+  {next_state, NextStateName, clear_state(State)};
+
+state_selection(_EventType, stop, _State = #atm_state{}) ->
+  {stop, got_stop_event};
+
+% unrecognized event under state ?ST_SELECTION
+state_selection(_EventType, _EventContent, State = #atm_state{}) ->
+  {keep_state, State}.
+
+
+%% withdraw is the state where the user can withdraw money, the user having been prompted
+%% for the amount. As with the get_pin state the digits are collected and when enter is
+%% received it is checked whether sufficient funds are available in the account. The result is
+%% reported to the user, the card ejected, and the machine goes to the idle state. A clear
+%% event will clear the digits, so all other events except stop and cancel are discarded.
+
+state_withdraw(_EventType, {digit, N}, State = #atm_state{amount_to_withdraw = CurrAmount}) ->
+  NewAmount = CurrAmount ++ integer_to_list(N),
+  {keep_state, State#atm_state{amount_to_withdraw = NewAmount}};
+
+state_withdraw(_EventType, enter,
+    State = #atm_state{amount_to_withdraw = WithdrawAmountList,
+      account_number = AccountNumber, entered_pin = Pin}) ->
+  try
+    WithdrowAmountInt = list_to_integer(WithdrawAmountList),
+    case backend:withdraw(AccountNumber, Pin, WithdrowAmountInt) of
+      {error, Reason} ->
+      % TODO: inform the user about the failed result..
+        {error, Reason};
+      _ ->
+      % TODO: inform the user about the successful result..
+        ok
+    end
+  catch
+    _:_ ->
+      % TODO: inform the user about the failed result.. (wrong amount format)
+      ok
+  end,
+  % anyway: go to idle.
+  NextStateName = ?ST_IDLE,
+  {next_state, NextStateName, clear_state(State)};
+
+state_withdraw(_EventType, clear, State = #atm_state{}) ->
+  {keep_state, State#atm_state{amount_to_withdraw = ""}};
+
+state_withdraw(_EventType, cancel, State = #atm_state{}) ->
+  NextStateName = ?ST_IDLE,
+  {next_state, NextStateName, clear_state(State)};
+
+state_withdraw(_EventType, stop, _State = #atm_state{}) ->
+  {stop, got_stop_event};
+
+% unrecognized event under state ?ST_WITHDRAW
+state_withdraw(_EventType, _EventContent, State = #atm_state{}) ->
+  {keep_state, State}.
 
 %% @private
 %% @doc If callback_mode is handle_event_function, then whenever a
@@ -161,4 +239,4 @@ code_change(_OldVsn, StateName, State = #atm_state{}, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 clear_state(State = #atm_state{}) ->
-  State#atm_state{entered_pin = "", account_number = none}.
+  State#atm_state{entered_pin = "", account_number = none, amount_to_withdraw = ""}.
