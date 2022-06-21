@@ -23,10 +23,13 @@
 
 -define(SERVER, ?MODULE).
 
+-define(TIMEOUT_VALUE, 10000). % 10 seconds
+
 -define(ST_IDLE, state_idle).
 -define(ST_GET_PIN, state_get_pin).
 -define(ST_SELECTION, state_selection).
 -define(ST_WITHDRAW, state_withdraw).
+-define(ST_TIMEOUT, state_timeout).
 
 -record(atm_state, {name,
   entered_pin = "",
@@ -96,7 +99,7 @@ format_status(_Opt, [_PDict, _StateName, _State]) ->
 state_idle(_EventType, {card_inserted, AccountNumber}, State = #atm_state{name = Name}) ->
   ok = webatm:show_pin_request(Name),
   NextStateName = ?ST_GET_PIN,
-  {next_state, NextStateName, State#atm_state{entered_pin = "", account_number = AccountNumber}};
+  {next_state, NextStateName, State#atm_state{entered_pin = "", account_number = AccountNumber}, [?TIMEOUT_VALUE]};
 
 state_idle(_EventType, stop, _State = #atm_state{}) ->
   {stop, got_stop_event};
@@ -106,10 +109,15 @@ state_idle(_EventType, _EventContent, State = #atm_state{}) ->
   {keep_state, State}.
 
 
+state_get_pin(_EventType=timeout, _EventContent, State = #atm_state{name = Name}) ->
+  webatm:show_timeout(Name),
+  NextStateName = ?ST_IDLE,
+  {next_state, NextStateName, clear_state(State)};
+
 state_get_pin(_EventType, {digit, N}, State = #atm_state{entered_pin = CurrPin, name = Name}) ->
   NewPin = CurrPin ++ N,
   ok = webatm:show_input(Name, NewPin),
-  {keep_state, State#atm_state{entered_pin = NewPin}};
+  {keep_state, State#atm_state{entered_pin = NewPin}, [?TIMEOUT_VALUE]};
 
 state_get_pin(_EventType, enter,
     State = #atm_state{entered_pin = Pin, account_number = AccountNumber, name = Name}) ->
@@ -124,11 +132,11 @@ state_get_pin(_EventType, enter,
       NextStateName = ?ST_GET_PIN,
       NewState = State#atm_state{entered_pin = ""}
   end,
-  {next_state, NextStateName, NewState};
+  {next_state, NextStateName, NewState, [?TIMEOUT_VALUE]};
 
 state_get_pin(_EventType, clear, State = #atm_state{name = Name}) ->
   ok = webatm:clear(Name),
-  {keep_state, State#atm_state{entered_pin = ""}};
+  {keep_state, State#atm_state{entered_pin = ""}, [?TIMEOUT_VALUE]};
 
 state_get_pin(_EventType, cancel, State = #atm_state{name = Name}) ->
   ok = webatm:cancel(Name),
@@ -140,30 +148,35 @@ state_get_pin(_EventType, stop, _State = #atm_state{}) ->
 
 % unrecognized event under state ?ST_GET_PIN
 state_get_pin(_EventType, _EventContent, State = #atm_state{}) ->
-  {keep_state, State}.
+  {keep_state, State, [?TIMEOUT_VALUE]}.
 
 
 %% selection is the state where the user can select what to do: withdraw cash, get a
 %% mini-statement or the current balance on the account. All events except selection, stop,
 %% and cancel are discarded. If a selection event is received, the appropriate action is
 %% performed. If withdraw is selected, the machine goes to the withdraw state.
+state_selection(_EventType=timeout, _EventContent, State = #atm_state{name = Name}) ->
+  webatm:show_timeout(Name),
+  NextStateName = ?ST_IDLE,
+  {next_state, NextStateName, clear_state(State), [?TIMEOUT_VALUE]};
+
 state_selection(_EventType, {selection, _Action = withdraw}, State = #atm_state{name = Name}) ->
   ok = webatm:show_withdraw_message(Name),
   NextStateName = ?ST_WITHDRAW,
-  {next_state, NextStateName, State};
+  {next_state, NextStateName, State, [?TIMEOUT_VALUE]};
 
 state_selection(_EventType, {selection, _Action = balance},
     State = #atm_state{account_number = AccountNumber, entered_pin = Pin, name = Name}) ->
   Balance = backend:balance(AccountNumber, Pin),
   ok = webatm:show_balance(Name, Balance),
-  {keep_state, State};
+  {keep_state, State, [?TIMEOUT_VALUE]};
 
 state_selection(_EventType, {selection, _Action = statement},
     State = #atm_state{account_number = AccountNumber, entered_pin = Pin, name = Name}) ->
   Transactions = backend:transactions(AccountNumber, Pin),
   Balance = backend:balance(AccountNumber, Pin),
   ok = webatm:show_mini_statement(Name, Transactions, Balance),
-  {keep_state, State};
+  {keep_state, State, [?TIMEOUT_VALUE]};
 
 state_selection(_EventType, cancel, State = #atm_state{name = Name}) ->
   ok = webatm:cancel(Name),
@@ -175,7 +188,7 @@ state_selection(_EventType, stop, _State = #atm_state{}) ->
 
 % unrecognized event under state ?ST_SELECTION
 state_selection(_EventType, _EventContent, State = #atm_state{}) ->
-  {keep_state, State}.
+  {keep_state, State, [?TIMEOUT_VALUE]}.
 
 
 %% withdraw is the state where the user can withdraw money, the user having been prompted
@@ -183,11 +196,15 @@ state_selection(_EventType, _EventContent, State = #atm_state{}) ->
 %% received it is checked whether sufficient funds are available in the account. The result is
 %% reported to the user, the card ejected, and the machine goes to the idle state. A clear
 %% event will clear the digits, so all other events except stop and cancel are discarded.
+state_withdraw(_EventType=timeout, _EventContent, State = #atm_state{name = Name}) ->
+  webatm:show_timeout(Name),
+  NextStateName = ?ST_IDLE,
+  {next_state, NextStateName, clear_state(State)};
 
 state_withdraw(_EventType, {digit, N}, State = #atm_state{amount_to_withdraw = CurrAmount, name = Name}) ->
   NewAmount = CurrAmount ++ N,
   ok = webatm:show_input(Name, NewAmount),
-  {keep_state, State#atm_state{amount_to_withdraw = NewAmount}};
+  {keep_state, State#atm_state{amount_to_withdraw = NewAmount}, [?TIMEOUT_VALUE]};
 
 state_withdraw(_EventType, enter,
     State = #atm_state{amount_to_withdraw = WithdrawAmountList,
@@ -213,7 +230,7 @@ state_withdraw(_EventType, enter,
 
 state_withdraw(_EventType, clear, State = #atm_state{name = Name}) ->
   ok = webatm:clear(Name),
-  {keep_state, State#atm_state{amount_to_withdraw = ""}};
+  {keep_state, State#atm_state{amount_to_withdraw = ""}, [?TIMEOUT_VALUE]};
 
 state_withdraw(_EventType, cancel, State = #atm_state{name = Name}) ->
   ok = webatm:cancel(Name),
@@ -225,7 +242,16 @@ state_withdraw(_EventType, stop, _State = #atm_state{}) ->
 
 % unrecognized event under state ?ST_WITHDRAW
 state_withdraw(_EventType, _EventContent, State = #atm_state{}) ->
-  {keep_state, State}.
+  {keep_state, State, [?TIMEOUT_VALUE]}.
+
+
+%%state_timeout(_EventType, timeout, State = #atm_state{name = Name}) ->
+%%  webatm:show_timeout(Name),
+%%  NextStateName = ?ST_IDLE,
+%%  {next_state, NextStateName, clear_state(State)};
+%%
+%%state_timeout(_EventType, _EventContent, State = #atm_state{}) ->
+%%  {keep_state, State}.
 
 %% @private
 %% @doc If callback_mode is handle_event_function, then whenever a
