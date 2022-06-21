@@ -94,7 +94,7 @@ format_status(_Opt, [_PDict, _StateName, _State]) ->
 %%  {next_state, NextStateName, State}.
 
 state_idle(_EventType, {card_inserted, AccountNumber}, State = #atm_state{name = Name}) ->
-  webatm:show_pin_request(Name),
+  ok = webatm:show_pin_request(Name),
   NextStateName = ?ST_GET_PIN,
   {next_state, NextStateName, State#atm_state{entered_pin = "", account_number = AccountNumber}};
 
@@ -107,31 +107,31 @@ state_idle(_EventType, _EventContent, State = #atm_state{}) ->
 
 
 state_get_pin(_EventType, {digit, N}, State = #atm_state{entered_pin = CurrPin, name = Name}) ->
-  NewPin = CurrPin ++ integer_to_list(N),
-  webatm:show_input(Name, NewPin),
+  NewPin = CurrPin ++ N,
+  ok = webatm:show_input(Name, NewPin),
   {keep_state, State#atm_state{entered_pin = NewPin}};
 
 state_get_pin(_EventType, enter,
     State = #atm_state{entered_pin = Pin, account_number = AccountNumber, name = Name}) ->
   case backend:pin_valid(AccountNumber, Pin) of
     true ->
-      webatm:show_pin_valid_message(Name),
+      ok = webatm:show_pin_valid_message(Name),
       NextStateName = ?ST_SELECTION,
       NewState = State;
     false ->
       % keep state.
-      webatm:show_pin_invalid_message(Name),
+      ok = webatm:show_pin_invalid_message(Name),
       NextStateName = ?ST_GET_PIN,
       NewState = State#atm_state{entered_pin = ""}
   end,
   {next_state, NextStateName, NewState};
 
 state_get_pin(_EventType, clear, State = #atm_state{name = Name}) ->
-  webatm:clear(Name),
+  ok = webatm:clear(Name),
   {keep_state, State#atm_state{entered_pin = ""}};
 
 state_get_pin(_EventType, cancel, State = #atm_state{name = Name}) ->
-  webatm:cancel(Name),
+  ok = webatm:cancel(Name),
   NextStateName = ?ST_IDLE,
   {next_state, NextStateName, clear_state(State)};
 
@@ -148,25 +148,25 @@ state_get_pin(_EventType, _EventContent, State = #atm_state{}) ->
 %% and cancel are discarded. If a selection event is received, the appropriate action is
 %% performed. If withdraw is selected, the machine goes to the withdraw state.
 state_selection(_EventType, {selection, _Action = withdraw}, State = #atm_state{name = Name}) ->
-  webatm:show_withdraw_message(Name),
+  ok = webatm:show_withdraw_message(Name),
   NextStateName = ?ST_WITHDRAW,
   {next_state, NextStateName, State};
 
 state_selection(_EventType, {selection, _Action = balance},
     State = #atm_state{account_number = AccountNumber, entered_pin = Pin, name = Name}) ->
   Balance = backend:balance(AccountNumber, Pin),
-  webatm:show_balance(Name, Balance),
+  ok = webatm:show_balance(Name, Balance),
   {keep_state, State};
 
 state_selection(_EventType, {selection, _Action = statement},
     State = #atm_state{account_number = AccountNumber, entered_pin = Pin, name = Name}) ->
   Transactions = backend:transactions(AccountNumber, Pin),
   Balance = backend:balance(AccountNumber, Pin),
-  webatm:show_mini_statement(Name, Transactions, Balance),
+  ok = webatm:show_mini_statement(Name, Transactions, Balance),
   {keep_state, State};
 
 state_selection(_EventType, cancel, State = #atm_state{name = Name}) ->
-  webatm:cancel(Name),
+  ok = webatm:cancel(Name),
   NextStateName = ?ST_IDLE,
   {next_state, NextStateName, clear_state(State)};
 
@@ -185,8 +185,8 @@ state_selection(_EventType, _EventContent, State = #atm_state{}) ->
 %% event will clear the digits, so all other events except stop and cancel are discarded.
 
 state_withdraw(_EventType, {digit, N}, State = #atm_state{amount_to_withdraw = CurrAmount, name = Name}) ->
-  NewAmount = CurrAmount ++ integer_to_list(N),
-  webatm:show_input(Name, NewAmount),
+  NewAmount = CurrAmount ++ N,
+  ok = webatm:show_input(Name, NewAmount),
   {keep_state, State#atm_state{amount_to_withdraw = NewAmount}};
 
 state_withdraw(_EventType, enter,
@@ -197,26 +197,26 @@ state_withdraw(_EventType, enter,
     case backend:withdraw(AccountNumber, Pin, WithdrowAmountInt) of
       {error, _Reason} ->
       % inform the user about the failed result..
-        webatm:show_unsuccessful_withdraw(Name, "Not enough cash in account");
+        ok = webatm:show_unsuccessful_withdraw(Name, "Not enough cash in account");
       _ ->
       % inform the user about the successful result..
-        webatm:show_successful_withdraw(Name)
+        ok = webatm:show_successful_withdraw(Name)
     end
   catch
     _:_ ->
       % inform the user about the failed result.. (wrong amount format)
-      webatm:show_unsuccessful_withdraw(Name, "Wrong amount format")
+      ok = webatm:show_unsuccessful_withdraw(Name, "Wrong amount format")
   end,
   % anyway: go to idle.
   NextStateName = ?ST_IDLE,
   {next_state, NextStateName, clear_state(State)};
 
 state_withdraw(_EventType, clear, State = #atm_state{name = Name}) ->
-  webatm:clear(Name),
+  ok = webatm:clear(Name),
   {keep_state, State#atm_state{amount_to_withdraw = ""}};
 
 state_withdraw(_EventType, cancel, State = #atm_state{name = Name}) ->
-  webatm:cancel(Name),
+  ok = webatm:cancel(Name),
   NextStateName = ?ST_IDLE,
   {next_state, NextStateName, clear_state(State)};
 
